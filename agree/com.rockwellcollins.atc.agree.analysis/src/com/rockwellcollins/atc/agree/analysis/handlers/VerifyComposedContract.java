@@ -160,6 +160,7 @@ public class VerifyComposedContract extends VerifyHandler{
 		AgreeProgram agreeProgram = new AgreeASTBuilder().getAgreeProgram(compInst);
 		RedlogProgram redlogProgram = RedlogAstBuilder.getContractRedlogProgram(agreeProgram, VerificationDirection.COMPOSITION);
 		ComponentImplementation compImpl = AgreeUtils.getInstanceImplementation(compInst);
+		// TODO: need to examine the getContract() method.
 		wrapper.addChild(createVerification("System Contract", compImpl, redlogProgram, agreeProgram, getContract(compImpl)));
     }
     
