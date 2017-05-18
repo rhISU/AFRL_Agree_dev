@@ -23,6 +23,7 @@ import org.osate.aadl2.AnnexSubclause;
 import org.osate.aadl2.ComponentImplementation;
 import org.osate.aadl2.ComponentType;
 import org.osate.aadl2.Element;
+import org.osate.aadl2.impl.DefaultAnnexSubclauseImpl;
 import org.osate.aadl2.impl.SystemSubcomponentImpl;
 import org.osate.aadl2.instance.ComponentInstance;
 import org.osate.aadl2.instance.SystemInstance;
@@ -167,11 +168,11 @@ public class VerifyComposedContract extends VerifyHandler{
     private void wrapDiagnosisResult(SystemSubcomponentImpl ssi, ComponentInstance compInst, CompositeAnalysisResult wrapper) {
 		AgreeProgram agreeProgram = new AgreeASTBuilder().getAgreeProgram(compInst);
 		RedlogProgram redlogProgram = RedlogAstBuilder.getContractRedlogProgram(agreeProgram, VerificationDirection.DIAGNOSIS);
-        AgreeSubclause contract = null;
+		AgreeSubclause contract = null;
         ComponentType ct = ssi.getComponentType();
         for (AnnexSubclause annex : ct.getOwnedAnnexSubclauses()) {
-            if (annex instanceof AgreeSubclause) {
-            	contract = (AgreeSubclause) annex;
+            if (annex instanceof DefaultAnnexSubclauseImpl) {
+            	contract = (AgreeSubclause)(((DefaultAnnexSubclauseImpl) annex).getParsedAnnexSubclause());
                 break;
             }
         }

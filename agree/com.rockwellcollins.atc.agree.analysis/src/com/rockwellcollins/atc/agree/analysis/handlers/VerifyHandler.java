@@ -41,6 +41,7 @@ import org.osate.aadl2.DataPort;
 import org.osate.aadl2.Element;
 import org.osate.aadl2.EventDataPort;
 import org.osate.aadl2.FeatureGroup;
+import org.osate.aadl2.impl.DefaultAnnexSubclauseImpl;
 import org.osate.aadl2.instance.ComponentInstance;
 import org.osate.aadl2.instance.SystemInstance;
 import org.osate.aadl2.instantiation.InstantiateModel;
@@ -392,8 +393,8 @@ public abstract class VerifyHandler extends AadlHandler {
     protected AgreeSubclause getContract(ComponentImplementation ci) {
         ComponentType ct = ci.getOwnedRealization().getImplemented();
         for (AnnexSubclause annex : ct.getOwnedAnnexSubclauses()) {
-            if (annex instanceof AgreeSubclause) {
-                return (AgreeSubclause) annex;
+            if (annex instanceof DefaultAnnexSubclauseImpl) {
+            	return (AgreeSubclause)(((DefaultAnnexSubclauseImpl) annex).getParsedAnnexSubclause());
             }
         }
         return null;
