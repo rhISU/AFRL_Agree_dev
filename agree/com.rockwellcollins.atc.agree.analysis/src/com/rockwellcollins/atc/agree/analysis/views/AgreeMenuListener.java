@@ -189,16 +189,32 @@ public class AgreeMenuListener implements IMenuListener {
     
     private void addViewRedlogStrongestPropertyMenu(IMenuManager manager, AnalysisResult result) {
     	RedlogProgram program = null;
-    	String systemStrongestProperty = "";
+    	RedlogResult rr = null;
+    	// initial system constraint is part of the strongest system property
+    	String initialSystemConstraint = "";
+    	String strongestSystemProperty = "";
+    	String weakestComponentProperty = "";
+    	
     	if (result instanceof RedlogResult) {
     		program = linker.getRedlogProgram(result);
-    		systemStrongestProperty = ((RedlogResult) result).getSystemStrongestProperty();
+    		rr = (RedlogResult) result;
     	} else if (result.getParent() instanceof RedlogResult) {
     		program = linker.getRedlogProgram(result.getParent());
-    		systemStrongestProperty = ((RedlogResult) result.getParent()).getSystemStrongestProperty();
+    		rr = (RedlogResult) result.getParent();
     	}
     	
-        if (program!= null && systemStrongestProperty != null) {
+        if (program!= null) {
+        	initialSystemConstraint = rr.getInitialSystemConstraint();
+        	if (initialSystemConstraint != null && !initialSystemConstraint.equals("")) {
+        		strongestSystemProperty = "The initial constraint:\r\n" + rr.getInitialSystemConstraint() + "\r\n";
+        		strongestSystemProperty += "The general time-dependent property:\r\n" + rr.getStrongestSystemProperty();
+        	} else {
+        		strongestSystemProperty = rr.getStrongestSystemProperty();
+        	}
+    		weakestComponentProperty = rr.getWeakestComponentProperty();
+    		// add initial system constraint into the strongest system property
+    		
+    		
     		String commentsHeader = "";
         	if (program.hasIntVar()) {
         		String[] comments = {"///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////", 
@@ -221,9 +237,12 @@ public class AgreeMenuListener implements IMenuListener {
         			commentsHeader += comments[i] +"\r\n";
         		}
         	}
-        	
-            manager.add(createWriteConsoleAction("View System Strongest Property", "System Strongest Property", commentsHeader + systemStrongestProperty));
-            return;
+        	if (!strongestSystemProperty.equals("")) {
+                manager.add(createWriteConsoleAction("View Strongest System Property", "Strongest System Property", commentsHeader + strongestSystemProperty));
+        	} else {
+        		manager.add(createWriteConsoleAction("View Weakest Component Property", "Weakest Component Property", commentsHeader + weakestComponentProperty));
+        	}
+        	return;
         }
     }
     
@@ -277,9 +296,7 @@ public class AgreeMenuListener implements IMenuListener {
             if (prop instanceof InvalidProperty) {
                 return ((InvalidProperty) prop).getCounterexample();
             }
-
         }
-
         return null;
     }
 
@@ -290,7 +307,6 @@ public class AgreeMenuListener implements IMenuListener {
                 return "Inductive ";
             }
         }
-
         return " ";
     }
 

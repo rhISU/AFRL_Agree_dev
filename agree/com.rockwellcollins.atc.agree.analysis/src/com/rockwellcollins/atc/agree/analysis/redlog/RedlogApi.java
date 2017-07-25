@@ -118,9 +118,9 @@ public class RedlogApi {
 			try {
 				result.start();
 				process = builder.start();
-				String[] pair = readRedlogOutput(process, monitor);
-				result.setSystemStrongestProperty(pair[0].replace(" or ", "\r\n or \r\n"));				
-				result.setText(pair[1]);
+				readRedlogOutputIntoResult(process, monitor, result);
+				// For now, the proofs of individual system properties are done in one single .redlog file, then to be shown on console.
+				// TODO: individual property may initiate an individual verification thread in separate file.
 				writeXmlFile(xmlFile, result);
 				parseThread.start();
 			} finally {
@@ -156,15 +156,21 @@ public class RedlogApi {
 		}
 	}
 	
-	private static String[] readRedlogOutput(Process process, IProgressMonitor monitor) throws IOException {
+	private static void readRedlogOutputIntoResult(Process process, IProgressMonitor monitor, RedlogResult result) throws IOException {
 		BufferedReader r = new BufferedReader(new InputStreamReader(process.getInputStream()));
+		StringBuilder isc = new StringBuilder();
 		StringBuilder ssp = new StringBuilder();
-		StringBuilder verificationResult = new StringBuilder();
-		String[] pair = new String[2];
+		StringBuilder wcp = new StringBuilder();
+		
+		// each property takes two elements,
+		// for inductive proof, first is base step result, second is inductive step result
+		// for direct proof, first is set to be null, second is the verification result.
+		List<String> resultList = new ArrayList<>();
+		boolean baseResultJustAdded = false;
 		
 		while (true) {
 			if (monitor.isCanceled()) {
-				return null;
+				return;
 			} else if (r.ready()) {
 				String line;
 				while (true) {
@@ -176,7 +182,16 @@ public class RedlogApi {
 						}
 					} else if (line.contains("End-of-file") || line.contains("Quitting")) {
 						break;
-					} else if (line.startsWith("//begin printing system strongest property:")) {
+					} else if (line.startsWith("//begin printing the initial system constraint:")) {
+						// skip the comment line
+						line = r.readLine();
+						while (!line.startsWith("//end printing")) {
+							if (!line.contains(":")) {
+								isc.append(line);
+							}
+							line = r.readLine();
+						}
+					} else if (line.startsWith("//begin printing the strongest system property:")) {
 						// skip the comment line
 						line = r.readLine();
 						while (!line.startsWith("//end printing")) {
@@ -185,27 +200,72 @@ public class RedlogApi {
 							}
 							line = r.readLine();
 						}
+					} else if (line.startsWith("//begin printing the weakest component property:")) {
+						// skip the comment line
+						line = r.readLine();
+						while (!line.startsWith("//end printing")) {
+							if (!line.contains(":")) {
+								wcp.append(line);
+							}
+							line = r.readLine();
+						}
 					} else if (line.startsWith("//begin printing system property verification result:")) {
+						StringBuilder verificationResult = new StringBuilder();
 						// skip the comment line
 						line = r.readLine();
 						while (!line.startsWith("//end printing")) {
 							if (!line.contains(":")) {
 								verificationResult.append(line);
-							}
+							} else if (line.startsWith("Time: ")) {
+								// runtime
+								verificationResult.append(line);
+							} 
 							line = r.readLine();
 						}
-					} else if (line.startsWith("Time: ")) {
-						// runtime
-						verificationResult.append(line);
-					} else {
-						continue;
-					}
+						resultList.add(null);
+						resultList.add(verificationResult.toString().replaceAll("[!\r\n]", "").replace(",", ",\r\n").replace("$", "\r\n"));
+					} else if (line.startsWith("//begin printing system property base verification result:")) {
+						StringBuilder bsr = new StringBuilder();
+						// skip the comment line
+						line = r.readLine();
+						while (!line.startsWith("//end printing")) {
+							if (!line.contains(":")) {
+								bsr.append(line);
+							} else if (line.startsWith("Time: ")) {
+								// runtime
+								bsr.append(line);
+							} 
+							line = r.readLine();
+						}
+						resultList.add(bsr.toString().replaceAll("[!\r\n]", "").replace(",", ",\r\n").replace("$", "\r\n"));
+						baseResultJustAdded = true;
+					} else if (line.startsWith("//begin printing system property inductive verification result:")) {
+						StringBuilder isr = new StringBuilder();	
+						// skip the comment line
+						line = r.readLine();
+						while (!line.startsWith("//end printing")) {
+							if (!line.contains(":")) {
+								isr.append(line);
+							} else if (line.startsWith("Time: ")) {
+								// runtime
+								isr.append(line);
+							} 
+							line = r.readLine();
+						}
+						if (baseResultJustAdded) {
+							resultList.add(isr.toString().replaceAll("[!\r\n]", "").replace(",", ",\r\n").replace("$", "\r\n"));
+						} else {
+							throw new RedlogException("Missing base step result."); 
+						}
+					} else { continue; }
 				}
-				pair[0] = ssp.toString().replaceAll("[!\r\n]", "").replace("$", "\r\n");
-				pair[1] = verificationResult.toString().replaceAll("[!\r\n]", "").replace(",", ",\r\n").replace("$", "\r\n");
-				return pair;
+				result.setInitialSystemConstraint(isc.toString().replaceAll("[!\r\n]", "").replace("$", "\r\n").replace(" or ", "\r\n or \r\n"));
+				result.setStrongestSystemProperty(ssp.toString().replaceAll("[!\r\n]", "").replace("$", "\r\n").replace(" or ", "\r\n or \r\n"));		
+				result.setWeakestComponentProperty(wcp.toString().replaceAll("[!\r\n]", "").replace("$", "\r\n").replace(" or ", "\r\n or \r\n"));
+				result.setPropertyResultStringList(resultList);
+				return;
 			} else if (!process.isAlive()) {
-				return null;
+				return;
 			}
 		}
 	}
@@ -213,25 +273,58 @@ public class RedlogApi {
 	private static void writeXmlFile(File xmlFile, RedlogResult redlogResult) throws FileNotFoundException {
 		XmlWriter writer = new XmlWriter(xmlFile.getPath(), false);
 		writer.begin();
-		String property = redlogResult.getPropertyResults().get(0).getName();
-		String redlogOutput = redlogResult.getText();
-		String runtimeLine = redlogOutput.substring(redlogResult.getText().indexOf("Time: "));
-		double runtime = Double.parseDouble(runtimeLine.replace("Time:", "").replace("ms", "").trim()) / 1000;
-		if (redlogResult.getText().replace("{", "").startsWith("true")) {
-			writer.writeValid(property, runtime);
-		} else if (redlogResult.getText().replace("{", "").startsWith("unknown")) {
-			writer.writeUnknown(property, runtime);
-		} else {
-			Counterexample cex = extractCounterexample(redlogResult);
-			writer.writeInvalid(property, cex, runtime);
+		List<String> propertyResultStringList = redlogResult.getPropertyResultStringList();
+		if (propertyResultStringList.size() != 2* redlogResult.getPropertyResults().size()) {
+			throw new RedlogException("Properties size and results size don't match.");
+		}
+		for (int i = 0; i < redlogResult.getPropertyResults().size(); i++) {
+			String property = redlogResult.getPropertyResults().get(i).getName();
+			if (propertyResultStringList.get(2*i) == null) {
+				String runtimeLine = propertyResultStringList.get(2*i + 1).substring(propertyResultStringList.get(2*i + 1).indexOf("Time: "));
+				//TODO: Sometimes runtime line also include GC time
+				double runtime = Double.parseDouble(runtimeLine.replace("Time:", "").replace("ms", "").trim()) / 1000;
+				// sometimes, true result returned by redlog is simply "{}".
+				if (propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("true") || propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("}")) {
+					writer.writeValid(property, runtime);
+				} else if (propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("unknown")) {
+					writer.writeUnknown(property, runtime);
+				} else {
+					Counterexample cex = extractCounterexample(propertyResultStringList.get(2*i + 1));
+					writer.writeInvalid(property, cex, runtime);
+				}
+			} else {
+				String runtimeLine1 = propertyResultStringList.get(2*i).substring(propertyResultStringList.get(2*i).indexOf("Time: "));
+				String runtimeLine2 = propertyResultStringList.get(2*i + 1).substring(propertyResultStringList.get(2*i + 1).indexOf("Time: "));
+				//TODO: Sometimes runtime line also include GC time
+				double runtime = (Double.parseDouble(runtimeLine1.replace("Time:", "").replace("ms", "").trim())+ Double.parseDouble(runtimeLine2.replace("Time:", "").replace("ms", "").trim())) / 1000;
+				// sometimes, true result returned by redlog is simply "{}".
+				// first check base step
+				if (propertyResultStringList.get(2*i).replace("{", "").startsWith("true") || propertyResultStringList.get(2*i).replace("{", "").startsWith("}")) {
+					// then check inductive step
+					if (propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("true") || propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("}")) {
+						writer.writeValid(property, runtime);	
+					} else if (propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("unknown")) {
+						writer.writeUnknown(property, runtime);
+					} else {
+						// TODO: need to distinguish concrete and inductive counterexample
+						Counterexample cex = extractCounterexample(propertyResultStringList.get(2*i + 1));
+						writer.writeInvalid(property, cex, runtime);
+					}
+				} else if (propertyResultStringList.get(2*i + 1).replace("{", "").startsWith("unknown")) {
+					writer.writeUnknown(property, runtime);
+				} else {
+					Counterexample cex = extractCounterexample(propertyResultStringList.get(2*i + 1));
+					writer.writeInvalid(property, cex, runtime);
+				}
+			}
 		}
 		writer.end();
 	}
 	
-	private static Counterexample extractCounterexample(RedlogResult redlogResult) {
+	private static Counterexample extractCounterexample(String rawCEX) {
 		// for now, counterexample found by QE has only 1 step
 		Counterexample cex = new Counterexample(1);
-		for (String line : redlogResult.getText().split("\r\n")) {
+		for (String line : rawCEX.split("\r\n")) {
 			if (line.contains("=")) {
 				String[] segments = line.replaceAll("[,{}]", "").split("=");
 				String var = segments[0].trim();

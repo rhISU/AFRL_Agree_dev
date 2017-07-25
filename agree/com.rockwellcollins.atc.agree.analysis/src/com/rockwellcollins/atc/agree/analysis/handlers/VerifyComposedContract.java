@@ -17,7 +17,6 @@ import org.eclipse.core.runtime.NullProgressMonitor;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.emf.common.util.EList;
 import org.eclipse.emf.ecore.EObject;
-import org.eclipse.emf.edit.provider.ItemProviderAdapter.ResultAndAffectedObjectsWrappingCommand;
 import org.eclipse.ui.handlers.IHandlerService;
 import org.osate.aadl2.AnnexSubclause;
 import org.osate.aadl2.ComponentImplementation;
@@ -52,7 +51,7 @@ import com.rockwellcollins.atc.agree.analysis.redlog.RedlogException;
 
 public class VerifyComposedContract extends VerifyHandler{
 	
-	public enum VerificationDirection {COMPOSITION, DIAGNOSIS}
+	//public enum VerificationDirection {COMPOSITION, DIAGNOSIS}
 	
     @Override
     protected boolean isRecursive() {
@@ -159,15 +158,16 @@ public class VerifyComposedContract extends VerifyHandler{
     
     private void wrapVerificationResult(ComponentInstance compInst, CompositeAnalysisResult wrapper) {
 		AgreeProgram agreeProgram = new AgreeASTBuilder().getAgreeProgram(compInst);
-		RedlogProgram redlogProgram = RedlogAstBuilder.getContractRedlogProgram(agreeProgram, VerificationDirection.COMPOSITION);
+		// the second parameter of getContractRedlogProgram() is null for component-2-system contract composition
+		RedlogProgram redlogProgram = new RedlogAstBuilder().getContractRedlogProgram(agreeProgram, null);
 		ComponentImplementation compImpl = AgreeUtils.getInstanceImplementation(compInst);
-		// TODO: need to examine the getContract() method.
 		wrapper.addChild(createVerification("System Contract", compImpl, redlogProgram, agreeProgram, getContract(compImpl)));
     }
     
     private void wrapDiagnosisResult(SystemSubcomponentImpl ssi, ComponentInstance compInst, CompositeAnalysisResult wrapper) {
 		AgreeProgram agreeProgram = new AgreeASTBuilder().getAgreeProgram(compInst);
-		RedlogProgram redlogProgram = RedlogAstBuilder.getContractRedlogProgram(agreeProgram, VerificationDirection.DIAGNOSIS);
+		// the second parameter of getContractRedlogProgram() is a component implementation object for system-2-component diagnosis
+		RedlogProgram redlogProgram = new RedlogAstBuilder().getContractRedlogProgram(agreeProgram, ssi.getName());
 		AgreeSubclause contract = null;
         ComponentType ct = ssi.getComponentType();
         for (AnnexSubclause annex : ct.getOwnedAnnexSubclauses()) {
@@ -203,32 +203,32 @@ public class VerifyComposedContract extends VerifyHandler{
     
     private void addRenamings(Map<String, EObject> refMap, AgreeRenaming renaming, List<String> properties, AgreeLayout layout,
             RedlogProgram redlogProgram, AgreeProgram agreeProgram) {
-        for (VarDecl var : redlogProgram.allVariables) {
+        for (VarDecl var : redlogProgram.getContextCompVariables()) {
             if (var instanceof AgreeVar) {
                 addReference(refMap, renaming, layout, var);
             }
         }
         
-        for (VarDecl var : redlogProgram.sysInputs) {
+        for (VarDecl var : redlogProgram.getSysInputs()) {
             if (var instanceof AgreeVar) {
                 addReference(refMap, renaming, layout, var);
             }
         }
         
-        for (VarDecl var : redlogProgram.sysOutputs) {
+        for (VarDecl var : redlogProgram.getSysOutputs()) {
             if (var instanceof AgreeVar) {
                 addReference(refMap, renaming, layout, var);
             }
         }
         
         // addRenaming for contract var(s)
-        for (VarDecl var : redlogProgram.systemContracts.keySet()) {
+        for (VarDecl var : redlogProgram.getSystemContracts().keySet()) {
         	if (var instanceof AgreeVar) {
         		addReference(refMap, renaming, layout, var);
         	}
         }
         
-        properties.addAll(redlogProgram.properties);
+        properties.addAll(redlogProgram.getProperties());
     }
 
     private IStatus doAnalysis(final Element root, final IProgressMonitor globalMonitor) {
